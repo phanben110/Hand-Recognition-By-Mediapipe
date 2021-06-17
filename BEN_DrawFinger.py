@@ -17,7 +17,7 @@ class DrawFinger:
             yList.append ( point[i][1] ) 
         xMin, xMax = min(xList), max(xList) 
         yMin, yMax = min(yList), max(yList) 
-        self.box = xMin, yMin , xMax, yMax
+        self.box = [xMin, yMin , xMax, yMax]
     def drawAndResize( self, img , point  , size = 100 ): 
         self.boudingBox( point  )  
         img2 = numpy.ones((img.shape[0], img.shape[1], 3), numpy.uint8) * 0
@@ -39,15 +39,15 @@ class DrawFinger:
             #elif s < 3 :
             #    s = 1
             s = int ( w*h/2000 ) 
-            print ( s ) 
+            #print ( s ) 
             if s > 30 : 
                 s = 26 
             elif s < 1:
                 s = 0
             #print (f"s: {s}" )
 
-            
-            cv2.rectangle( img2 , ( self.box[0] - s , self.box[1] - s ) , ( self.box[2] + s , self.box[3]+ s  ) , (0,255,0),2 )
+            self.box.append(s) 
+            #cv2.rectangle( img2 , ( self.box[0] - s , self.box[1] - s ) , ( self.box[2] + s , self.box[3]+ s  ) , (0,255,0),2 )
 
             list_connections = [[0, 1, 2, 3, 4],
                                 [0, 5, 6, 7, 8],
@@ -67,12 +67,11 @@ class DrawFinger:
 
             # resize 130 x 130
             k=1
-            print ( f"print crop {crop_img.shape}" ) 
-            cv2.imshow( "dd", img2 ) 
+            #print ( f"print crop {crop_img.shape}" ) 
             if w > h :
-                k = w/96
+                k = w/(size - 4) 
             else :
-                k = h/96
+                k = h/(size - 4) 
             
             w1 = int ( w/k )
             h1 = int ( h/k )
@@ -86,7 +85,7 @@ class DrawFinger:
                 y_offset=int ( (size - crop_img.shape[1] )/2)
                 #print ( y_offset )
                 img3[x_offset:crop_img.shape[0]+x_offset , y_offset:crop_img.shape[1]+y_offset] = crop_img
-                return True , img2 , img3
+                return True , self.box , img3
             except : 
                 return False, False, False 
         return False ,False , False 

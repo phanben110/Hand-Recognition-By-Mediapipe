@@ -25,7 +25,9 @@ class HandTracker:
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
                 lm_score_threshold=0.7,
-                use_gesture=False):
+                recPath="models/torchHandRec.blob",
+                recScore = 0.8,
+                useRec=True):
 
         self.camera = input_file is None
         self.pd_path = pd_path
@@ -34,7 +36,15 @@ class HandTracker:
         self.use_lm = use_lm
         self.lm_path = lm_path
         self.lm_score_threshold = lm_score_threshold
-        self.use_gesture = use_gesture 
+        #self.use_gesture = use_gesture 
+        self.useRec  = useRec 
+        self.recPath = recPath
+        self.recScore = recScore
+
+        #that is labels 
+
+        self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
+
 
         # this custom function 
         self.pointFinger = [] 
@@ -75,9 +85,9 @@ class HandTracker:
             self.show_pd_kps = False
             self.show_rot_rect = False
             self.show_handedness = False
-            self.show_landmarks = True
+            self.show_landmarks = False
             self.show_scores = False
-            self.show_gesture = self.use_gesture
+            self.useRec = True
         else:
             self.show_pd_box = True
             self.show_pd_kps = False
@@ -146,7 +156,22 @@ class HandTracker:
             lm_out = pipeline.createXLinkOut()
             lm_out.setStreamName("lm_out")
             lm_nn.out.link(lm_out.input)
+
+        if self.useRec: 
+            detection_nn = pipeline.createNeuralNetwork()
+            detection_nn.setBlobPath(str(Path(self.recPath).resolve().absolute()))
+            #create viture image input for neural network
+            imgNN = pipeline.createXLinkIn()
+            imgNN.setStreamName("in_nn")
+            imgNN.out.link(detection_nn.input)
             
+            # Create outputs
+            xout_nn = pipeline.createXLinkOut()
+            xout_nn.setStreamName("nn")
+            detection_nn.out.link(xout_nn.input)
+
+
+
         print("Pipeline created.")
         return pipeline        
 
@@ -178,68 +203,6 @@ class HandTracker:
                         (int(r.pd_box[0] * self.video_size+10), int((r.pd_box[1]+r.pd_box[3])*self.video_size+60)), 
                         cv2.FONT_HERSHEY_PLAIN, 2, (255,255,0), 2)
 
-    def recognize_gesture(self, r):           
-
-        # Finger states
-        # state: -1=unknown, 0=close, 1=open
-        d_3_5 = mpu.distance(r.landmarks[3], r.landmarks[5])
-        d_2_3 = mpu.distance(r.landmarks[2], r.landmarks[3])
-        angle0 = mpu.angle(r.landmarks[0], r.landmarks[1], r.landmarks[2])
-        angle1 = mpu.angle(r.landmarks[1], r.landmarks[2], r.landmarks[3])
-        angle2 = mpu.angle(r.landmarks[2], r.landmarks[3], r.landmarks[4])
-        r.thumb_angle = angle0+angle1+angle2
-        if angle0+angle1+angle2 > 460 and d_3_5 / d_2_3 > 1.2: 
-            r.thumb_state = 1
-        else:
-            r.thumb_state = 0
-
-        if r.landmarks[8][1] < r.landmarks[7][1] < r.landmarks[6][1]:
-            r.index_state = 1
-        elif r.landmarks[6][1] < r.landmarks[8][1]:
-            r.index_state = 0
-        else:
-            r.index_state = -1
-
-        if r.landmarks[12][1] < r.landmarks[11][1] < r.landmarks[10][1]:
-            r.middle_state = 1
-        elif r.landmarks[10][1] < r.landmarks[12][1]:
-            r.middle_state = 0
-        else:
-            r.middle_state = -1
-
-        if r.landmarks[16][1] < r.landmarks[15][1] < r.landmarks[14][1]:
-            r.ring_state = 1
-        elif r.landmarks[14][1] < r.landmarks[16][1]:
-            r.ring_state = 0
-        else:
-            r.ring_state = -1
-
-        if r.landmarks[20][1] < r.landmarks[19][1] < r.landmarks[18][1]:
-            r.little_state = 1
-        elif r.landmarks[18][1] < r.landmarks[20][1]:
-            r.little_state = 0
-        else:
-            r.little_state = -1
-
-        # Gesture
-        if r.thumb_state == 1 and r.index_state == 1 and r.middle_state == 1 and r.ring_state == 1 and r.little_state == 1:
-            r.gesture = "FIVE"
-        elif r.thumb_state == 0 and r.index_state == 0 and r.middle_state == 0 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "FIST"
-        elif r.thumb_state == 1 and r.index_state == 0 and r.middle_state == 0 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "OK" 
-        elif r.thumb_state == 0 and r.index_state == 1 and r.middle_state == 1 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "PEACE"
-        elif r.thumb_state == 0 and r.index_state == 1 and r.middle_state == 0 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "ONE"
-        elif r.thumb_state == 1 and r.index_state == 1 and r.middle_state == 0 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "TWO"
-        elif r.thumb_state == 1 and r.index_state == 1 and r.middle_state == 1 and r.ring_state == 0 and r.little_state == 0:
-            r.gesture = "THREE"
-        elif r.thumb_state == 0 and r.index_state == 1 and r.middle_state == 1 and r.ring_state == 1 and r.little_state == 1:
-            r.gesture = "FOUR"
-        else:
-            r.gesture = None
             
     def lm_postprocess(self, region, inference):
         region.lm_score = inference.getLayerFp16("Identity_1")[0]    
@@ -251,7 +214,6 @@ class HandTracker:
             # x,y,z -> x/w,y/h,z/w (here h=w)
             lm.append(lm_raw[3*i:3*(i+1)]/self.lm_input_length)
         region.landmarks = lm
-        if self.use_gesture: self.recognize_gesture(region)
 
 
     
@@ -266,8 +228,17 @@ class HandTracker:
             lm_xy = np.expand_dims(np.array([(l[0], l[1]) for l in region.landmarks]), axis=0)
             lm_xy = np.squeeze(cv2.transform(lm_xy, mat)).astype(np.int)
                 
-            check,img2, cropImg = DrawFinger.drawAndResize(frame,lm_xy,size = 100  )
-            cv2.imshow("crop", cropImg ) 
+            check,box, img = DrawFinger.drawAndResize(frame,lm_xy,size = 100  )
+
+            if check: 
+                
+                cv2.imshow("crop", img  )
+                img = cv2.resize(img ,(26,26))
+                imgCrop = img.T  
+                cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
+            else: 
+                imgCrop = None 
+
                 #check, cropImg = DrawFinger.drawAndResize(frame,lm_xy,size = 100 , draw = True ) 
                 #cv2.polylines(frame, lines, False, (255,255, 255), 12, cv2.LINE_AA)
             if self.show_landmarks: 
@@ -296,11 +267,48 @@ class HandTracker:
                 cv2.putText(frame, f"Landmark score: {region.lm_score:.2f}", 
                         (int(region.pd_box[0] * self.video_size+10), int((region.pd_box[1]+region.pd_box[3])*self.video_size+90)), 
                         cv2.FONT_HERSHEY_PLAIN, 2, (255,255,0), 2)
-            if self.use_gesture and self.show_gesture:
-                cv2.putText(frame, region.gesture, (int(region.pd_box[0]*self.video_size+10), int(region.pd_box[1]*self.video_size-50)), 
-                        cv2.FONT_HERSHEY_PLAIN, 3, (255,255,255), 3)
+
+            return imgCrop
+
+    
+    def softmax(self, x): 
+        """Compute softmax values for each sets of scores in x."""
+        e_x = np.exp(x - np.max(x))
+        return e_x / e_x.sum(axis=0)
+
+
+    def recProcess(self,imgCrop ,  q_rec_in , q_rec_out) :
+        #print ( imgCrop.size )
+        try:
+            nn_data = dai.NNData()
+            nn_data.setLayer("0", imgCrop )
+            q_rec_in.send(nn_data)
+            in_nn = q_rec_out.tryGet()
+
+            if in_nn is not None:
+                data = self.softmax(in_nn.getFirstLayerFp16())
+                result_conf = np.max(data)
+                return result_conf , data 
+            else : 
+                return 0 , 0 
+        except: 
+            return 0,0
+
+    def recRender(self, frame , result_conf , data ):
+        if result_conf > 0.95: 
+            label = self.labels[int ( np.argmax(data))]  
+            conf = f"{round(100*result_conf,2)}%"
+            print ( conf ) 
+            cv2.putText( frame , f"Status: {label} {conf}" , (200,26) , cv2.FONT_HERSHEY_PLAIN,2, (255, 0, 255  ) ,thickness=3)
+            
+        else: 
+            label = ' '
+            conf = ' '
+            cv2.putText( frame , f"Status: {label} {conf}" , (200,26) , cv2.FONT_HERSHEY_PLAIN,2, (255, 0, 255  ) ,thickness=3)
+ 
 
         
+
 
     def run(self):
 
@@ -311,15 +319,21 @@ class HandTracker:
         if self.camera:
             q_video = device.getOutputQueue(name="cam_out", maxSize=1, blocking=False)
             q_pd_out = device.getOutputQueue(name="pd_out", maxSize=1, blocking=False)
+
             if self.use_lm:
                 q_lm_out = device.getOutputQueue(name="lm_out", maxSize=2, blocking=False)
                 q_lm_in = device.getInputQueue(name="lm_in")
+
         else:
             q_pd_in = device.getInputQueue(name="pd_in")
             q_pd_out = device.getOutputQueue(name="pd_out", maxSize=4, blocking=True)
             if self.use_lm:
                 q_lm_out = device.getOutputQueue(name="lm_out", maxSize=4, blocking=True)
                 q_lm_in = device.getInputQueue(name="lm_in")
+
+        if self.useRec: 
+            q_rec_in = device.getInputQueue("in_nn")
+            q_rec_out = device.getOutputQueue(name="nn", maxSize=1, blocking=False)
 
         self.fps = FPS(mean_nb_frames=20)
 
@@ -377,8 +391,14 @@ class HandTracker:
                     inference = q_lm_out.get()
                     if i == 0: glob_lm_rtrip_time += now() - lm_rtrip_time
                     self.lm_postprocess(r, inference)
-                    self.lm_render(annotated_frame, r)
+                    imgCrop = self.lm_render(annotated_frame, r)
                     nb_lm_inferences += 1
+
+            # Hand recognitions 
+                    if self.useRec: 
+                        
+                        result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
+                        self.recRender( annotated_frame,result, data )  
 
                 
             self.fps.display(annotated_frame, orig=(50,50),color=(240,180,100))
@@ -402,8 +422,6 @@ class HandTracker:
                 self.show_handedness = not self.show_handedness
             elif key == ord('6'):
                 self.show_scores = not self.show_scores
-            elif key == ord('7'):
-                self.show_gesture = not self.show_gesture
 
         # Print some stats
         if not self.camera:
@@ -424,9 +442,9 @@ if __name__ == "__main__":
                         help="only the palm detection model is run, not the hand landmark model")
     parser.add_argument("--lm_m", default="models/hand_landmark.blob", type=str,
                         help="Path to a blob file for landmark model (default=%(default)s)")
-    parser.add_argument('-g', '--gesture', action="store_true", 
+    parser.add_argument('-rec', '--rec', action="store_true", 
                         help="enable gesture recognition")
     args = parser.parse_args()
 
-    ht = HandTracker(input_file=args.input, pd_path=args.pd_m, use_lm= not args.no_lm, lm_path=args.lm_m, use_gesture=args.gesture)
+    ht = HandTracker(input_file=args.input, pd_path=args.pd_m, use_lm= not args.no_lm, lm_path=args.lm_m, useRec=args.rec)
     ht.run()
