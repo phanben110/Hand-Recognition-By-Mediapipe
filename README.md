@@ -2,10 +2,7 @@
 
 Running Google Mediapipe Hand Tracking models on [DepthAI](https://docs.luxonis.com/en/gen2/) hardware (OAK-1, OAK-D, ...)
 
-There is a version for OpenVINO there : [openvino_hand_tracker](https://github.com/geaxgx/openvino_hand_tracker)
 
-![Demo](img/hand_tracker.gif)
-## Install
 
 Install DepthAI gen2 python package:
 
@@ -25,7 +22,6 @@ To enable gesture recognition :
 
 ```python3 HandTracker.py -g```
 
-![Gesture recognition](img/gestures.gif)
 
 To run only the palm detection model (without hand landmarks), use *--no_lm* argument. Of course, gesture recognition is not possible in this mode.
 
