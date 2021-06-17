@@ -66,3 +66,4 @@ By default, the number of SHAVES associated with the blob files is 4. In case yo
 The palm detection blob does not exactly give the same results as the tflite version, because the tflite ResizeBilinear instruction is converted into IR Interpolate-1. Yet the difference is almost imperceptible thanks to the great help of PINTO (see [issue](https://github.com/PINTO0309/tflite2tensorflow/issues/4) ).
 
 
+# Hand-Recognition-By-Mediapipe
