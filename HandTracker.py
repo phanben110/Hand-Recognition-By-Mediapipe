@@ -21,12 +21,12 @@ def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
 class HandTracker:
     def __init__(self, input_file=None,
                 pd_path="models/palm_detection.blob", 
-                pd_score_thresh=0.7, pd_nms_thresh=0.3,
+                pd_score_thresh=0.6, pd_nms_thresh=0.3,
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
-                lm_score_threshold=0.7,
+                lm_score_threshold=0.6,
                 recPath="models/torchHandRec.blob",
-                recScore = 0.8,
+                recScore = 0.96,
                 useRec=True):
 
         self.camera = input_file is None
@@ -232,7 +232,7 @@ class HandTracker:
 
             if check: 
                 
-                cv2.imshow("crop", img  )
+                #cv2.imshow("crop", img  )
                 img = cv2.resize(img ,(26,26))
                 imgCrop = img.T  
                 cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
@@ -295,20 +295,17 @@ class HandTracker:
             return 0,0
 
     def recRender(self, frame , result_conf , data ):
-        if result_conf > 0.95: 
+        if result_conf > self.recScore: 
             label = self.labels[int ( np.argmax(data))]  
             conf = f"{round(100*result_conf,2)}%"
             print ( conf ) 
-            cv2.putText( frame , f"Status: {label} {conf}" , (200,26) , cv2.FONT_HERSHEY_PLAIN,2, (255, 0, 255  ) ,thickness=3)
+            cv2.putText( frame , f"Status: {label} {conf}" , (200,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
             
         else: 
             label = ' '
             conf = ' '
-            cv2.putText( frame , f"Status: {label} {conf}" , (200,26) , cv2.FONT_HERSHEY_PLAIN,2, (255, 0, 255  ) ,thickness=3)
- 
-
+            cv2.putText( frame , f"Status: {label} {conf}" , (200,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
         
-
 
     def run(self):
 
