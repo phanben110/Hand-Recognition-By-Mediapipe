@@ -4,8 +4,9 @@ import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
-from FPS import FPS, now
+#from FPS import FPS, now
 import argparse
+import time 
 import BEN_DrawFinger as DrawFinger
 
 #define 
@@ -111,14 +112,24 @@ class HandTracker:
             # Crop video to square shape (palm detection takes square image as input)
             self.video_size = min(cam.getVideoSize())
             cam.setVideoSize(self.video_size, self.video_size)
+            # this function to resize 
+
             cam.setFps(50)
             cam.setInterleaved(False)
             cam.setBoardSocket(dai.CameraBoardSocket.RGB)
+
+            print("Creating ImageManip node...")
+            #manip.out.link(detection_nn.input)
+
             cam_out = pipeline.createXLinkOut()
             cam_out.setStreamName("cam_out")
+
+            #manip = pipeline.createImageManip()
+            #manip.setResize(300, 300)
             # Link video output to host for higher resolution
             cam.video.link(cam_out.input)
 
+            #cam.video.link(manip.inputImage)
         # Define palm detection model
         print("Creating Palm Detection Neural Network...")
         pd_nn = pipeline.createNeuralNetwork()
@@ -299,12 +310,12 @@ class HandTracker:
             label = self.labels[int ( np.argmax(data))]  
             conf = f"{round(100*result_conf,2)}%"
             print ( conf ) 
-            cv2.putText( frame , f"Status: {label} {conf}" , (200,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
+            cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
             
         else: 
             label = ' '
             conf = ' '
-            cv2.putText( frame , f"Status: {label} {conf}" , (200,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
+            cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
         
 
     def run(self):
@@ -332,73 +343,85 @@ class HandTracker:
             q_rec_in = device.getInputQueue("in_nn")
             q_rec_out = device.getOutputQueue(name="nn", maxSize=1, blocking=False)
 
-        self.fps = FPS(mean_nb_frames=20)
+        #self.fps = FPS(mean_nb_frames=20)
 
         seq_num = 0
         nb_pd_inferences = 0
         nb_lm_inferences = 0
         glob_pd_rtrip_time = 0
         glob_lm_rtrip_time = 0
+        framePass = 2 
+        PASS = framePass
+        counter = 0
+        cTime = 0 
+        fps = 0 
+        pTime = 0 
         while True:
-            self.fps.update()
-            if self.camera:
-                in_video = q_video.get()
-                video_frame = in_video.getCvFrame()
-            else:
-                if self.image_mode:
-                    vid_frame = self.img
+            #self.fps.update()
+            cTime = time.time() 
+            if PASS == framePass: 
+                if self.camera:
+                    in_video = q_video.get()
+                    video_frame = in_video.getCvFrame()
                 else:
-                    ok, vid_frame = self.cap.read()
-                    if not ok:
-                        break
-                h, w = vid_frame.shape[:2]
-                dx = (w - self.video_size) // 2
-                dy = (h - self.video_size) // 2
-                video_frame = vid_frame[dy:dy+self.video_size, dx:dx+self.video_size]
-                frame_nn = dai.ImgFrame()
-                frame_nn.setSequenceNum(seq_num)
-                frame_nn.setWidth(self.pd_input_length)
-                frame_nn.setHeight(self.pd_input_length)
-                frame_nn.setData(to_planar(video_frame, (self.pd_input_length, self.pd_input_length)))
-                q_pd_in.send(frame_nn)
-                pd_rtrip_time = now()
+                    if self.image_mode:
+                        vid_frame = self.img
+                    else:
+                        ok, vid_frame = self.cap.read()
+                        if not ok:
+                            break
+                    h, w = vid_frame.shape[:2]
+                    dx = (w - self.video_size) // 2
+                    dy = (h - self.video_size) // 2
+                    video_frame = vid_frame[dy:dy+self.video_size, dx:dx+self.video_size]
+                    frame_nn = dai.ImgFrame()
+                    frame_nn.setSequenceNum(seq_num)
+                    frame_nn.setWidth(self.pd_input_length)
+                    frame_nn.setHeight(self.pd_input_length)
+                    frame_nn.setData(to_planar(video_frame, (self.pd_input_length, self.pd_input_length)))
+                    q_pd_in.send(frame_nn)
 
-                seq_num += 1
+                    seq_num += 1
 
-            annotated_frame = video_frame.copy()
+                annotated_frame = video_frame.copy()
 
-            # Get palm detection
-            inference = q_pd_out.get()
-            if not self.camera: glob_pd_rtrip_time += now() - pd_rtrip_time
-            self.pd_postprocess(inference)
-            self.pd_render(annotated_frame)
-            nb_pd_inferences += 1
+                # Get palm detection
+                inference = q_pd_out.get()
+                self.pd_postprocess(inference)
+                self.pd_render(annotated_frame)
+                nb_pd_inferences += 1
 
-            # Hand landmarks
-            if self.use_lm:
-                for i,r in enumerate(self.regions):
-                    img_hand = mpu.warp_rect_img(r.rect_points, video_frame, self.lm_input_length, self.lm_input_length)
-                    nn_data = dai.NNData()   
-                    nn_data.setLayer("input_1", to_planar(img_hand, (self.lm_input_length, self.lm_input_length)))
-                    q_lm_in.send(nn_data)
-                    if i == 0: lm_rtrip_time = now() # We measure only for the first region
-                
-                # Retrieve hand landmarks
-                for i,r in enumerate(self.regions):
-                    inference = q_lm_out.get()
-                    if i == 0: glob_lm_rtrip_time += now() - lm_rtrip_time
-                    self.lm_postprocess(r, inference)
-                    imgCrop = self.lm_render(annotated_frame, r)
-                    nb_lm_inferences += 1
+                # Hand landmarks
+                if self.use_lm:
+                    for i,r in enumerate(self.regions):
+                        img_hand = mpu.warp_rect_img(r.rect_points, video_frame, self.lm_input_length, self.lm_input_length)
+                        nn_data = dai.NNData()   
+                        nn_data.setLayer("input_1", to_planar(img_hand, (self.lm_input_length, self.lm_input_length)))
+                        q_lm_in.send(nn_data)
+                    
+                    # Retrieve hand landmarks
+                    for i,r in enumerate(self.regions):
+                        inference = q_lm_out.get()
+                        self.lm_postprocess(r, inference)
+                        imgCrop = self.lm_render(annotated_frame, r)
+                        nb_lm_inferences += 1
 
-            # Hand recognitions 
-                    if self.useRec: 
-                        
-                        result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
-                        self.recRender( annotated_frame,result, data )  
-
-                
-            self.fps.display(annotated_frame, orig=(50,50),color=(240,180,100))
+                # Hand recognitions 
+                        if self.useRec: 
+                            
+                            result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
+                            self.recRender( annotated_frame,result, data )  
+                PASS = 0 
+            else: 
+                PASS += 1
+                pass
+            counter +=1 
+            if ( cTime - pTime ) > 1: 
+                fps = counter/(cTime - pTime )  
+                counter = 0 
+                pTime = cTime 
+            cv2.putText( annotated_frame, f"FPS: {int(fps)}" , (10,50), cv2.FONT_HERSHEY_PLAIN,3,(255,0,255), 3) 
+            #self.fps.display(annotated_frame, orig=(50,50),color=(240,180,100))
             cv2.imshow("video", annotated_frame)
 
             key = cv2.waitKey(1) 
