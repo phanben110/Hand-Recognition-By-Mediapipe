@@ -6,8 +6,19 @@ import cv2
 from pathlib import Path
 #from FPS import FPS, now
 import argparse
-import time 
+import time
+import torchvision.transforms as transforms 
 import BEN_DrawFinger as DrawFinger
+from PIL import Image
+
+
+dataTransform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize(26),
+    transforms.ToTensor()
+    ])
+
+
 
 #define 
 DrawFinger = DrawFinger.DrawFinger( True )     
@@ -22,12 +33,12 @@ def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
 class HandTracker:
     def __init__(self, input_file=None,
                 pd_path="models/palm_detection.blob", 
-                pd_score_thresh=0.6, pd_nms_thresh=0.3,
+                pd_score_thresh=0.5, pd_nms_thresh=0.5, #defaut = 0.3 
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
-                lm_score_threshold=0.6,
-                recPath="models/torchHandRec.blob",
-                recScore = 0.96,
+                lm_score_threshold=0.5,
+                recPath="models/model12ClassV2.blob",
+                recScore = 0.97,
                 useRec=True):
 
         self.camera = input_file is None
@@ -44,7 +55,9 @@ class HandTracker:
 
         #that is labels 
 
-        self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
+        #self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
+        self.labels = ['3', '9', '5', '0', '11', '10', '2', '1', '7', '6', '4', '8']
+
 
 
         # this custom function 
@@ -110,7 +123,7 @@ class HandTracker:
             cam.setPreviewSize(self.pd_input_length, self.pd_input_length)
             cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
             # Crop video to square shape (palm detection takes square image as input)
-            self.video_size = min(cam.getVideoSize())
+            self.video_size = 600#min(cam.getVideoSize())
             cam.setVideoSize(self.video_size, self.video_size)
             # this function to resize 
 
@@ -168,7 +181,8 @@ class HandTracker:
             lm_out.setStreamName("lm_out")
             lm_nn.out.link(lm_out.input)
 
-        if self.useRec: 
+        if self.useRec:
+            print("creating Recognition hand model" )  
             detection_nn = pipeline.createNeuralNetwork()
             detection_nn.setBlobPath(str(Path(self.recPath).resolve().absolute()))
             #create viture image input for neural network
@@ -242,10 +256,17 @@ class HandTracker:
             check,box, img = DrawFinger.drawAndResize(frame,lm_xy,size = 100  )
 
             if check: 
-                
+                 
                 #cv2.imshow("crop", img  )
                 img = cv2.resize(img ,(26,26))
                 imgCrop = img.T  
+                imgCrop.reshape(1,1,26,26)
+                #imgCrop = np.array(imgCrop, dtype=np.uint8 ) 
+                #imgCrop  = Image.fromarray(imgCrop)
+                print ( imgCrop.size ) 
+                #img = np.array ( img )
+                #image = dataTransform ( img )
+
                 cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
             else: 
                 imgCrop = None 
