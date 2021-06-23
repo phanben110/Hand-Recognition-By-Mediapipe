@@ -4,21 +4,9 @@ import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
-#from FPS import FPS, now
 import argparse
 import time
-import torchvision.transforms as transforms 
 import BEN_DrawFinger as DrawFinger
-from PIL import Image
-
-
-dataTransform = transforms.Compose([
-    transforms.ToPILImage(),
-    transforms.Resize(26),
-    transforms.ToTensor()
-    ])
-
-
 
 #define 
 DrawFinger = DrawFinger.DrawFinger( True )     
@@ -33,10 +21,10 @@ def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
 class HandTracker:
     def __init__(self, input_file=None,
                 pd_path="models/palm_detection.blob", 
-                pd_score_thresh=0.5, pd_nms_thresh=0.5, #defaut = 0.3 
+                pd_score_thresh=0.78, pd_nms_thresh=0.3, #defaut = 0.3 
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
-                lm_score_threshold=0.5,
+                lm_score_threshold=0.75,
                 recPath="models/model12ClassV2.blob",
                 recScore = 0.97,
                 useRec=True):
@@ -56,7 +44,8 @@ class HandTracker:
         #that is labels 
 
         #self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
-        self.labels = ['3', '9', '5', '0', '11', '10', '2', '1', '7', '6', '4', '8']
+        #self.labels = ['3', '9', '5', '0', '11', '10', '2', '1', '7', '6', '4', '8']
+        self.labels = ['Three','Stop','Hello','Zero','Tym','Nothing','Two','One','Dislike', 'Like' ,'Four','Ok' ,'Nothing' ]
 
 
 
@@ -123,7 +112,7 @@ class HandTracker:
             cam.setPreviewSize(self.pd_input_length, self.pd_input_length)
             cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
             # Crop video to square shape (palm detection takes square image as input)
-            self.video_size = 600#min(cam.getVideoSize())
+            self.video_size = 800#min(cam.getVideoSize())
             cam.setVideoSize(self.video_size, self.video_size)
             # this function to resize 
 
@@ -257,8 +246,8 @@ class HandTracker:
 
             if check: 
                  
-                #cv2.imshow("crop", img  )
                 img = cv2.resize(img ,(26,26))
+                cv2.imshow("crop", img  )
                 imgCrop = img.T  
                 imgCrop.reshape(1,1,26,26)
                 #imgCrop = np.array(imgCrop, dtype=np.uint8 ) 
@@ -269,7 +258,8 @@ class HandTracker:
 
                 cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
             else: 
-                imgCrop = None 
+                imgCrop = None
+                box = []
 
                 #check, cropImg = DrawFinger.drawAndResize(frame,lm_xy,size = 100 , draw = True ) 
                 #cv2.polylines(frame, lines, False, (255,255, 255), 12, cv2.LINE_AA)
@@ -300,7 +290,7 @@ class HandTracker:
                         (int(region.pd_box[0] * self.video_size+10), int((region.pd_box[1]+region.pd_box[3])*self.video_size+90)), 
                         cv2.FONT_HERSHEY_PLAIN, 2, (255,255,0), 2)
 
-            return imgCrop
+            return imgCrop , box 
 
     
     def softmax(self, x): 
@@ -326,17 +316,23 @@ class HandTracker:
         except: 
             return 0,0
 
-    def recRender(self, frame , result_conf , data ):
+    def recRender(self, frame , result_conf , data , box ):
         if result_conf > self.recScore: 
             label = self.labels[int ( np.argmax(data))]  
             conf = f"{round(100*result_conf,2)}%"
-            print ( conf ) 
-            cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
+            print ( conf )
+            #c2 =[box[2] + box[0], box[3] + box[1]] 
+            t_size = cv2.getTextSize(label, 0, fontScale=1, thickness=3)[0]
+            c1 =box[0],box[1] - t_size[1] 
+            c2 = c1[0] + t_size[0],c1[1] - t_size[1]  
+            cv2.rectangle(frame, c1, c2, [255,255,255] , thickness=2, lineType=cv2.LINE_AA)
+            cv2.rectangle(frame, c1, c2, [255,0,0] , -1, cv2.LINE_AA)  # filled
+            cv2.putText(frame , label, (c1[0], c1[1] - 2), 0, 1, [225,255, 255], thickness=2, lineType=cv2.LINE_AA)
             
         else: 
             label = ' '
             conf = ' '
-            cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
+            #cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
         
 
     def run(self):
@@ -384,6 +380,7 @@ class HandTracker:
                 if self.camera:
                     in_video = q_video.get()
                     video_frame = in_video.getCvFrame()
+
                 else:
                     if self.image_mode:
                         vid_frame = self.img
@@ -424,14 +421,17 @@ class HandTracker:
                     for i,r in enumerate(self.regions):
                         inference = q_lm_out.get()
                         self.lm_postprocess(r, inference)
-                        imgCrop = self.lm_render(annotated_frame, r)
+                        try:
+
+                            imgCrop , box = self.lm_render(annotated_frame, r)
+                            # Hand recognitions 
+                            if self.useRec: 
+                                result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
+                                self.recRender( annotated_frame,result, data, box  )  
+                        except:
+                            continue  
                         nb_lm_inferences += 1
 
-                # Hand recognitions 
-                        if self.useRec: 
-                            
-                            result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
-                            self.recRender( annotated_frame,result, data )  
                 PASS = 0 
             else: 
                 PASS += 1
