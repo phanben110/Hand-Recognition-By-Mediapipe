@@ -16,17 +16,16 @@ def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
     resized = cv2.resize(arr, shape)
     return resized.transpose(2,0,1)
 
-
-
 class HandTracker:
     def __init__(self, input_file=None,
                 pd_path="models/palm_detection.blob", 
-                pd_score_thresh=0.78, pd_nms_thresh=0.3, #defaut = 0.3 
+                pd_score_thresh=0.5, pd_nms_thresh=0.3, #defaut = 0.3 
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
-                lm_score_threshold=0.75,
-                recPath="models/model12ClassV2.blob",
-                recScore = 0.97,
+                lm_score_threshold=0.5,
+                recPath="models/model12ClassSize50.blob",
+                sizeRec = 50,
+                recScore = 0.9,
                 useRec=True):
 
         self.camera = input_file is None
@@ -40,14 +39,13 @@ class HandTracker:
         self.useRec  = useRec 
         self.recPath = recPath
         self.recScore = recScore
+        self.sizeRec = sizeRec 
 
         #that is labels 
 
         #self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
         #self.labels = ['3', '9', '5', '0', '11', '10', '2', '1', '7', '6', '4', '8']
         self.labels = ['Three','Stop','Hello','Zero','Tym','Nothing','Two','One','Dislike', 'Like' ,'Four','Ok' ,'Nothing' ]
-
-
 
         # this custom function 
         self.pointFinger = [] 
@@ -96,7 +94,6 @@ class HandTracker:
             self.show_pd_kps = False
             self.show_rot_rect = False
             self.show_scores = False
-        
 
     def create_pipeline(self):
         print("Creating pipeline...")
@@ -152,7 +149,6 @@ class HandTracker:
         pd_out = pipeline.createXLinkOut()
         pd_out.setStreamName("pd_out")
         pd_nn.out.link(pd_out.input)
-        
 
          # Define hand landmark model
         if self.use_lm:
@@ -184,11 +180,8 @@ class HandTracker:
             xout_nn.setStreamName("nn")
             detection_nn.out.link(xout_nn.input)
 
-
-
         print("Pipeline created.")
         return pipeline        
-
     
     def pd_postprocess(self, inference):
         scores = np.array(inference.getLayerFp16("classificators"), dtype=np.float16) # 896
@@ -216,13 +209,11 @@ class HandTracker:
                 cv2.putText(frame, f"Palm score: {r.pd_score:.2f}", 
                         (int(r.pd_box[0] * self.video_size+10), int((r.pd_box[1]+r.pd_box[3])*self.video_size+60)), 
                         cv2.FONT_HERSHEY_PLAIN, 2, (255,255,0), 2)
-
             
     def lm_postprocess(self, region, inference):
         region.lm_score = inference.getLayerFp16("Identity_1")[0]    
         region.handedness = inference.getLayerFp16("Identity_2")[0]
         lm_raw = np.array(inference.getLayerFp16("Identity_dense/BiasAdd/Add"))
-        
         lm = []
         for i in range(int(len(lm_raw)/3)):
             # x,y,z -> x/w,y/h,z/w (here h=w)
@@ -246,20 +237,19 @@ class HandTracker:
 
             if check: 
                  
-                img = cv2.resize(img ,(26,26))
-                cv2.imshow("crop", img  )
+                img = cv2.resize(img ,(self.sizeRec,self.sizeRec))
+                #cv2.imshow("crop", img  )
                 imgCrop = img.T  
-                imgCrop.reshape(1,1,26,26)
+                imgCrop.reshape(1,1,self.sizeRec,self.sizeRec)
                 #imgCrop = np.array(imgCrop, dtype=np.uint8 ) 
                 #imgCrop  = Image.fromarray(imgCrop)
-                print ( imgCrop.size ) 
                 #img = np.array ( img )
                 #image = dataTransform ( img )
 
-                cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
+                #cv2.rectangle( frame , ( box[0] - box[4] , box[1] - box[4] ) , ( box[2] + box[4] , box[3]+ box[4]  ) , (0,255,0),2 )
             else: 
                 imgCrop = None
-                box = []
+                box = None 
 
                 #check, cropImg = DrawFinger.drawAndResize(frame,lm_xy,size = 100 , draw = True ) 
                 #cv2.polylines(frame, lines, False, (255,255, 255), 12, cv2.LINE_AA)
@@ -272,7 +262,6 @@ class HandTracker:
                                     [13, 17],
                                     [0, 17, 18, 19, 20]]
                 # TODO lm_xy is a variable to store the point store 
-                print (len ( lm_xy )) 
                 lines = [np.array([lm_xy[point] for point in line]) for line in list_connections]
                 #print ( f"print line {lines}" ) 
                 #print ( len(lines)) 
@@ -302,6 +291,8 @@ class HandTracker:
     def recProcess(self,imgCrop ,  q_rec_in , q_rec_out) :
         #print ( imgCrop.size )
         try:
+            timeBegin = time.time() 
+
             nn_data = dai.NNData()
             nn_data.setLayer("0", imgCrop )
             q_rec_in.send(nn_data)
@@ -310,24 +301,27 @@ class HandTracker:
             if in_nn is not None:
                 data = self.softmax(in_nn.getFirstLayerFp16())
                 result_conf = np.max(data)
-                return result_conf , data 
+                label = self.labels[int ( np.argmax(data))]  
+                return result_conf , label
             else : 
                 return 0 , 0 
+            #print ( f"time predict {(time.time() - timeBegin)*1000}")   
         except: 
             return 0,0
 
-    def recRender(self, frame , result_conf , data , box ):
+    def recRender(self, frame , result_conf , label , box1 ):
+        #print ( result_conf ) 
         if result_conf > self.recScore: 
-            label = self.labels[int ( np.argmax(data))]  
             conf = f"{round(100*result_conf,2)}%"
-            print ( conf )
-            #c2 =[box[2] + box[0], box[3] + box[1]] 
-            t_size = cv2.getTextSize(label, 0, fontScale=1, thickness=3)[0]
-            c1 =box[0],box[1] - t_size[1] 
-            c2 = c1[0] + t_size[0],c1[1] - t_size[1]  
-            cv2.rectangle(frame, c1, c2, [255,255,255] , thickness=2, lineType=cv2.LINE_AA)
-            cv2.rectangle(frame, c1, c2, [255,0,0] , -1, cv2.LINE_AA)  # filled
-            cv2.putText(frame , label, (c1[0], c1[1] - 2), 0, 1, [225,255, 255], thickness=2, lineType=cv2.LINE_AA)
+            #c2 =[box[2] + box[0], box[3] + box[1]]
+            cv2.rectangle( frame , ( box1[0] - box1[4] , box1[1] - box1[4] ) , ( box1[2] + box1[4] , box1[3]+ box1[4]  ) , (0,255,0),2 )
+            text = f"  {label} {conf}  "
+            t_size = cv2.getTextSize(text, 0, fontScale=1, thickness=3)[0]
+            c1 =box1[0] ,box1[1] - t_size[1] 
+            c2 = c1[0] + t_size[0]  ,c1[1] - t_size[1] 
+            cv2.rectangle(frame, c1, c2, [0,255,0] , thickness=2, lineType=cv2.LINE_AA)
+            cv2.rectangle(frame, c1, c2, [0,255,0] , -1, cv2.LINE_AA)  # filled
+            cv2.putText(frame , text, (c1[0], c1[1] - 2), 0, 0.8, [0,0,0], thickness=2, lineType=cv2.LINE_AA)
             
         else: 
             label = ' '
@@ -372,14 +366,16 @@ class HandTracker:
         counter = 0
         cTime = 0 
         fps = 0 
-        pTime = 0 
+        pTime = 0
+        timeProcess = []
+        label = [None, None ] 
         while True:
             #self.fps.update()
             cTime = time.time() 
             if PASS == framePass: 
                 if self.camera:
                     in_video = q_video.get()
-                    video_frame = in_video.getCvFrame()
+                    video_frame = in_video.getCvFrame() 
 
                 else:
                     if self.image_mode:
@@ -404,12 +400,17 @@ class HandTracker:
                 annotated_frame = video_frame.copy()
 
                 # Get palm detection
+                timeBegin = time.time() 
                 inference = q_pd_out.get()
                 self.pd_postprocess(inference)
                 self.pd_render(annotated_frame)
                 nb_pd_inferences += 1
+                timeProcess.append( ( time.time() - timeBegin)*1000 ) 
+                #print(np.average(timeProcess)) 
 
                 # Hand landmarks
+                my = [0]
+                myScore = [0] 
                 if self.use_lm:
                     for i,r in enumerate(self.regions):
                         img_hand = mpu.warp_rect_img(r.rect_points, video_frame, self.lm_input_length, self.lm_input_length)
@@ -421,23 +422,31 @@ class HandTracker:
                     for i,r in enumerate(self.regions):
                         inference = q_lm_out.get()
                         self.lm_postprocess(r, inference)
-                        try:
+                        my.append(r)
+                        myScore.append( r.lm_score ) 
+                        #try:
+                        #    imgCrop,box = self.lm_render(annotated_frame, r)
+                        #    # Hand recognitions
+                        #    result, label  = self.recProcess(imgCrop , q_rec_in, q_rec_out)
+                        #    self.recRender( annotated_frame,result, label, box )
+                        #except:
+                        #    pass
+                # just detect 1 hand 
+                if self.useRec:
+                    try:
+                        imgCrop,box = self.lm_render(annotated_frame, my[np.argmax(myScore)] )
+                        # Hand recognitions
+                        result, label  = self.recProcess(imgCrop , q_rec_in, q_rec_out)
+                        self.recRender( annotated_frame,result, label, box )
+                    except:
+                        pass
+                PASS = 0
 
-                            imgCrop , box = self.lm_render(annotated_frame, r)
-                            # Hand recognitions 
-                            if self.useRec: 
-                                result, data  = self.recProcess(imgCrop , q_rec_in, q_rec_out) 
-                                self.recRender( annotated_frame,result, data, box  )  
-                        except:
-                            continue  
-                        nb_lm_inferences += 1
-
-                PASS = 0 
+                #print (label) 
             else: 
                 PASS += 1
-                pass
             counter +=1 
-            if ( cTime - pTime ) > 1: 
+            if (cTime-pTime)>1: 
                 fps = counter/(cTime - pTime )  
                 counter = 0 
                 pTime = cTime 

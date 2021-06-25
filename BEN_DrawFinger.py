@@ -33,7 +33,7 @@ class DrawFinger:
  
 
             s =int ( w*h*0.0004) 
-            print ( w*h ) 
+            #print ( w*h ) 
             if s > 20 :
                 s = 20
             elif s < 3 :
