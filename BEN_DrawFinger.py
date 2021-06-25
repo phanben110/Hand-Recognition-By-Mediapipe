@@ -32,18 +32,18 @@ class DrawFinger:
             #note here can change because can't suits for this situation 
  
 
-            #s =int ( w*h*0.0004) 
+            s =int ( w*h*0.0004) 
             #print ( w*h ) 
-            #if s > 20 :
-            #    s = 20
-            #elif s < 3 :
+            if s > 20 :
+                s = 20
+            elif s < 3 :
+                s = 1
+            #s = int ( w*h/2000 ) 
+            ##print ( s ) 
+            #if s > 30 : 
+            #    s = 26 
+            #elif s < 1:
             #    s = 1
-            s = int ( w*h/2000 ) 
-            #print ( s ) 
-            if s > 30 : 
-                s = 26 
-            elif s < 1:
-                s = 0
             #print (f"s: {s}" )
 
             self.box.append(s) 
