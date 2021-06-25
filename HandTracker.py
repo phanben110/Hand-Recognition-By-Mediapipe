@@ -4,6 +4,7 @@ import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
+
 import argparse
 import time
 import BEN_DrawFinger as DrawFinger
@@ -236,9 +237,11 @@ class HandTracker:
             check,box, img = DrawFinger.drawAndResize(frame,lm_xy,size = 100  )
 
             if check: 
+
                  
                 img = cv2.resize(img ,(self.sizeRec,self.sizeRec))
                 #cv2.imshow("crop", img  )
+
                 imgCrop = img.T  
                 imgCrop.reshape(1,1,self.sizeRec,self.sizeRec)
                 #imgCrop = np.array(imgCrop, dtype=np.uint8 ) 
@@ -309,6 +312,7 @@ class HandTracker:
         except: 
             return 0,0
 
+
     def recRender(self, frame , result_conf , label , box1 ):
         #print ( result_conf ) 
         if result_conf > self.recScore: 
@@ -326,7 +330,9 @@ class HandTracker:
         else: 
             label = ' '
             conf = ' '
+
             #cv2.putText( frame , f" {label} {conf}" , (300,50) , cv2.FONT_HERSHEY_PLAIN,3, (255, 0, 255  ) ,thickness=3)
+
         
 
     def run(self):
@@ -375,7 +381,9 @@ class HandTracker:
             if PASS == framePass: 
                 if self.camera:
                     in_video = q_video.get()
+
                     video_frame = in_video.getCvFrame() 
+
 
                 else:
                     if self.image_mode:
@@ -400,6 +408,7 @@ class HandTracker:
                 annotated_frame = video_frame.copy()
 
                 # Get palm detection
+
                 timeBegin = time.time() 
                 inference = q_pd_out.get()
                 self.pd_postprocess(inference)
