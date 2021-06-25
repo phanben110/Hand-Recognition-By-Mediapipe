@@ -20,13 +20,15 @@ def to_planar(arr: np.ndarray, shape: tuple) -> np.ndarray:
 class HandTracker:
     def __init__(self, input_file=None,
                 pd_path="models/palm_detection.blob", 
-                pd_score_thresh=0.5, pd_nms_thresh=0.3, #defaut = 0.3 
+                pd_score_thresh=0.7, pd_nms_thresh=0.3, #defaut = 0.3 
                 use_lm=True,
                 lm_path="models/hand_landmark.blob",
                 lm_score_threshold=0.5,
-                recPath="models/model12ClassSize50.blob",
-                sizeRec = 50,
+                recPath="models/model12ClassSize26.blob",
+                sizeRec = 26,
                 recScore = 0.9,
+                FPS = 25 ,
+                framePass = 1 , 
                 useRec=True):
 
         self.camera = input_file is None
@@ -41,7 +43,8 @@ class HandTracker:
         self.recPath = recPath
         self.recScore = recScore
         self.sizeRec = sizeRec 
-
+        self.FPS = FPS
+        self.framePass = framePass
         #that is labels 
 
         #self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
@@ -55,7 +58,7 @@ class HandTracker:
             if input_file.endswith('.jpg') or input_file.endswith('.png') :
                 self.image_mode = True
                 self.img = cv2.imread(input_file)
-                self.video_size = np.min(self.img.shape[:2])
+                self.video_size = 600#np.min(self.img.shape[:2])
             else:
                 self.image_mode = False
                 self.cap = cv2.VideoCapture(input_file)
@@ -110,11 +113,11 @@ class HandTracker:
             cam.setPreviewSize(self.pd_input_length, self.pd_input_length)
             cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
             # Crop video to square shape (palm detection takes square image as input)
-            self.video_size = 800#min(cam.getVideoSize())
+            self.video_size = 600#min(cam.getVideoSize())
             cam.setVideoSize(self.video_size, self.video_size)
             # this function to resize 
 
-            cam.setFps(50)
+            cam.setFps(self.FPS)
             cam.setInterleaved(False)
             cam.setBoardSocket(dai.CameraBoardSocket.RGB)
 
@@ -367,8 +370,7 @@ class HandTracker:
         nb_lm_inferences = 0
         glob_pd_rtrip_time = 0
         glob_lm_rtrip_time = 0
-        framePass = 2 
-        PASS = framePass
+        PASS = self.framePass
         counter = 0
         cTime = 0 
         fps = 0 
@@ -378,7 +380,7 @@ class HandTracker:
         while True:
             #self.fps.update()
             cTime = time.time() 
-            if PASS == framePass: 
+            if PASS == self.framePass: 
                 if self.camera:
                     in_video = q_video.get()
 
@@ -409,13 +411,10 @@ class HandTracker:
 
                 # Get palm detection
 
-                timeBegin = time.time() 
                 inference = q_pd_out.get()
                 self.pd_postprocess(inference)
                 self.pd_render(annotated_frame)
                 nb_pd_inferences += 1
-                timeProcess.append( ( time.time() - timeBegin)*1000 ) 
-                #print(np.average(timeProcess)) 
 
                 # Hand landmarks
                 my = [0]
@@ -440,7 +439,10 @@ class HandTracker:
                         #    self.recRender( annotated_frame,result, label, box )
                         #except:
                         #    pass
-                # just detect 1 hand 
+                # just detect 1 hand
+                #timeProcess.append( ( time.time() - timeBegin)*1000 ) 
+                #print(np.average(timeProcess)) 
+                timeBegin = time.time() 
                 if self.useRec:
                     try:
                         imgCrop,box = self.lm_render(annotated_frame, my[np.argmax(myScore)] )
@@ -452,6 +454,7 @@ class HandTracker:
                 PASS = 0
 
                 #print (label) 
+                print ((  time.time() - timeBegin )*1000)  
             else: 
                 PASS += 1
             counter +=1 
@@ -461,6 +464,7 @@ class HandTracker:
                 pTime = cTime 
             cv2.putText( annotated_frame, f"FPS: {int(fps)}" , (10,50), cv2.FONT_HERSHEY_PLAIN,3,(255,0,255), 3) 
             #self.fps.display(annotated_frame, orig=(50,50),color=(240,180,100))
+            #annotated_frame = cv2.resize(annotated_frame, ( 300 , 300) ) 
             cv2.imshow("video", annotated_frame)
 
             key = cv2.waitKey(1) 
