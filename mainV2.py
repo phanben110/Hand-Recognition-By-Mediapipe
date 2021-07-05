@@ -17,14 +17,14 @@ class HandGesture(DepthAI):
                 lm_path="models/hand_landmark.blob",
                 lm_score_threshold=0.5,
                 lm_input_length=224,
-                rec_path="models/model12ClassSize26V4.blob",
-                size_rec=26,
-                rec_score=0.85,
+                rec_path="models/model12ClassSize50V3.blob",
+                size_rec=50,
+                rec_score=0.9,
                 frame_pass=0,
                 use_rec=True):
         self.cam_size = (500, 500)
         # self.cv_status_code = os.environ["CV_STATUS"]
-
+        
         self.pd_path = pd_path
         self.pd_score_thresh = pd_score_thresh
         self.pd_nms_thresh = pd_nms_thresh
@@ -37,6 +37,7 @@ class HandGesture(DepthAI):
         self.size_rec = size_rec
         self.frame_pass = frame_pass
         self.lm_input_length = lm_input_length
+        self.handLocation = None 
         super(HandGesture, self).__init__(
             camera, not no_debug)
 
@@ -137,10 +138,10 @@ class HandGesture(DepthAI):
         nn_data = run_nn(self.landmark_in, self.landmark_nn, send_data)
         if nn_data is None:
             return (False, None)
-        lm_score, handedness, lm = self.lm_postprocess(nn_data)
+        lm_score, self.handLocation , lm = self.lm_postprocess(nn_data)
         if lm_score < self.lm_score_threshold:
-            return (False, lm)
-        return (True, lm)
+            return (False, lm )
+        return (True, lm )
 
     def lm_postprocess(self, inference):
         lm_score = inference.getLayerFp16("Identity_1")[0]
@@ -162,12 +163,19 @@ class HandGesture(DepthAI):
         mat = cv2.getAffineTransform(src, dst)
         lm_xy = np.expand_dims(np.array([(l[0], l[1]) for l in landmarks]), axis=0)
         lm_xy = np.squeeze(cv2.transform(lm_xy, mat)).astype(np.int)
+        handRL = None 
+        if self.handLocation  > 0.5:
+            handRL = "Left"
+        else:
+            handRL = "Right"
 
         check, box, img = DrawFinger().drawAndResize(img= frame,point= lm_xy, size=100)
         if check:
             img = cv2.resize(img, (self.size_rec, self.size_rec))
             if self.debug:
                 cv2.imshow("lm_crop", img)
+            if handRL  == "Left" : 
+                img = cv2.flip(img,1) 
             img_crop = img.T
             img_crop.reshape(1, 1, self.size_rec, self.size_rec)
 
@@ -252,6 +260,7 @@ class HandGesture(DepthAI):
                                     (box[0] - box[4], box[1] - box[4] - 10),
                                     (255, 0, 255),
                                 )
+
 
     def display(self):
         cv2.imshow("debug_frame", self.debug_frame)

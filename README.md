@@ -1,17 +1,17 @@
 
-
+## Install
 Install DepthAI gen2 python package:
 
 ```python3 -m pip install -r requirements.txt```
 
 ## Run
 
-To use the color camera as input :
+To use the color camera OAK-D as input with new version :
 
-```python3 handGesture.py```
+```main.py```
 
-To use a file (video or image) as input :
+To use the color camera OAK-D as input with old version :
 
-```python3 handGesture.py -i filename```
+```python handGesture.py```
 
 

@@ -1,13 +1,13 @@
 import numpy as np
 from collections import namedtuple
-import mediapipe_utils as mpu
+from utils import mediapipe_utils as mpu
 import depthai as dai
 import cv2
 from pathlib import Path
 
 import argparse
 import time
-import BEN_DrawFinger as DrawFinger
+from utils import BEN_DrawFinger as DrawFinger
 
 #define 
 DrawFinger = DrawFinger.DrawFinger( True )     
@@ -28,7 +28,7 @@ class HandTracker:
                 sizeRec = 26,
                 recScore = 0.9,
                 FPS = 25 ,
-                framePass = 0 , 
+                framePass = 1 , 
                 useRec=True):
 
         self.camera = input_file is None
@@ -45,6 +45,7 @@ class HandTracker:
         self.sizeRec = sizeRec 
         self.FPS = FPS
         self.framePass = framePass
+        self.handLocation = None 
         #that is labels 
 
         #self.labels =  ['Ok', 'Silent', 'Dislike', 'Like', 'Hi', 'Hello', 'Stop' , ' ' ]
@@ -86,12 +87,12 @@ class HandTracker:
 
         # Rendering flags
         if self.use_lm:
-            self.show_pd_box = True 
+            self.show_pd_box = False 
             self.show_pd_kps = False
             self.show_rot_rect = False
             self.show_handedness = False
-            self.show_landmarks = True 
-            self.show_scores = True 
+            self.show_landmarks = False 
+            self.show_scores = False 
             self.useRec = True
         else:
             self.show_pd_box = True
@@ -227,6 +228,7 @@ class HandTracker:
 
     
     def lm_render(self, frame, region):
+
         if region.lm_score > self.lm_score_threshold:
             if self.show_rot_rect:
                 cv2.polylines(frame, [np.array(region.rect_points)], True, (0,255,255), 2, cv2.LINE_AA)
@@ -238,13 +240,17 @@ class HandTracker:
             lm_xy = np.squeeze(cv2.transform(lm_xy, mat)).astype(np.int)
                 
             check,box, img = DrawFinger.drawAndResize(frame,lm_xy,size = 100  )
+            print (  f"right or left {region.handedness}"  )
+            if region.handedness > 0.5:
+                self.handLocation = "Left" 
+            else:
+                self.handLocation = "Right" 
 
             if check: 
-
-                 
                 img = cv2.resize(img ,(self.sizeRec,self.sizeRec))
+                if self.handLocation == "Left": 
+                    img = cv2.flip(img,1)  
                 cv2.imshow("crop", img  )
-
                 imgCrop = img.T  
                 imgCrop.reshape(1,1,self.sizeRec,self.sizeRec)
                 #imgCrop = np.array(imgCrop, dtype=np.uint8 ) 
@@ -275,6 +281,7 @@ class HandTracker:
                 cv2.polylines(frame, lines, False, (255,255, 255), 12, cv2.LINE_AA)
                 for x,y in lm_xy:
                     cv2.circle(frame, (x, y), 6, (255,255,255), -1)
+
 
             if self.show_handedness:
                 cv2.putText(frame, f"RIGHT {region.handedness:.2f}" if region.handedness > 0.5 else f"LEFT {1-region.handedness:.2f}", 
@@ -449,7 +456,7 @@ class HandTracker:
                         # Hand recognitions
                         result, label  = self.recProcess(imgCrop , q_rec_in, q_rec_out)
                         self.recRender( annotated_frame,result, label, box )
-                        print ((  time.time() - timeBegin )*1000)  
+                        #print ((  time.time() - timeBegin )*1000)  
                     except:
                         pass
                 PASS = 0

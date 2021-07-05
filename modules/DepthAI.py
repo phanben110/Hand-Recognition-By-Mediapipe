@@ -28,7 +28,7 @@ class DepthAI:
         self.is_db = is_db
         self.create_pipeline()
         # self.warm_up()
-        self.fontScale = 1 if self.camera else 2
+        self.fontScale = 0.75 if self.camera else 2
         self.lineType = 0 if self.camera else 3
 
     def create_pipeline(self):
@@ -44,6 +44,7 @@ class DepthAI:
                 depthai.ColorCameraProperties.SensorResolution.THE_4_K
             )
             self.cam.setInterleaved(False)
+            self.cam.setFps(30) 
             self.cam.setBoardSocket(depthai.CameraBoardSocket.RGB)
             self.cam.setColorOrder(depthai.ColorCameraProperties.ColorOrder.BGR)
 
@@ -60,7 +61,6 @@ class DepthAI:
 
     def create_nn(self, model_path: str, model_name: str, first: bool = False, input_shape: tuple = None):
         """
-
         :param input_shape: model input shape
         :param model_path: model path
         :param model_name: model abbreviation
